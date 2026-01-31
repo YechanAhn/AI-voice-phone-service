@@ -5,8 +5,12 @@ It registers as a LiveKit agent worker, and when an inbound
 SIP call arrives, it:
 1. Joins the LiveKit room
 2. Waits for the SIP caller participant
-3. Creates a VoicePipeline
+3. Creates a VoicePipeline (full mode) or IVRPipeline (IVR mode)
 4. Processes audio in real-time until the call ends
+
+Service modes:
+    - "full": Full AI reservation conversation (GPT-4o + function calling)
+    - "ivr": Natural voice menu (keyword matching + GPT-4o-mini fallback)
 
 Run with:
     python -m src.voice.agent
@@ -19,24 +23,44 @@ import structlog
 from livekit import api, rtc
 
 from src.config import settings
+from src.voice.ivr import IVRConfig
+from src.voice.ivr_pipeline import IVRPipeline
 from src.voice.pipeline import VoicePipeline
 
 logger = structlog.get_logger()
 
 
+def _create_pipeline(room: rtc.Room, restaurant_name: str) -> VoicePipeline | IVRPipeline:
+    """Create the appropriate pipeline based on service_mode config."""
+    if settings.service_mode == "ivr":
+        ivr_config = IVRConfig(
+            restaurant_name=restaurant_name,
+            enable_reservation_transfer=settings.ivr_enable_reservation_transfer,
+            staff_transfer_number=settings.ivr_staff_transfer_number,
+        )
+        return IVRPipeline(
+            room=room,
+            ivr_config=ivr_config,
+            restaurant_id=settings.restaurant_id,
+        )
+    return VoicePipeline(
+        room=room,
+        restaurant_name=restaurant_name,
+        restaurant_id=settings.restaurant_id,
+    )
+
+
 async def handle_call(room: rtc.Room, restaurant_name: str) -> None:
     """Handle a single phone call in a LiveKit room.
 
-    Waits for the SIP participant to join, creates a voice pipeline,
-    and processes audio until the call ends.
+    Waits for the SIP participant to join, creates the appropriate
+    pipeline (full or IVR), and processes audio until the call ends.
     """
     call_id = room.name
-    logger.info("agent.call_started", call_id=call_id)
+    mode = settings.service_mode
+    logger.info("agent.call_started", call_id=call_id, mode=mode)
 
-    pipeline = VoicePipeline(
-        room=room,
-        restaurant_name=restaurant_name,
-    )
+    pipeline = _create_pipeline(room, restaurant_name)
 
     # Track the SIP caller participant
     caller_identity: str | None = None
@@ -63,6 +87,9 @@ async def handle_call(room: rtc.Room, restaurant_name: str) -> None:
         if participant.identity == caller_identity:
             logger.info("agent.caller_disconnected", caller=caller_identity)
             pipeline._running = False
+            # Also stop handed-off reservation pipeline in IVR mode
+            if isinstance(pipeline, IVRPipeline) and pipeline._reservation_pipeline:
+                pipeline._reservation_pipeline._running = False
 
     # Start the voice pipeline
     await pipeline.start()
@@ -81,7 +108,12 @@ async def handle_call(room: rtc.Room, restaurant_name: str) -> None:
     # Main audio processing loop
     try:
         async for frame_event in audio_stream:
-            if not pipeline._running:
+            is_active = (
+                pipeline.is_running
+                if isinstance(pipeline, IVRPipeline)
+                else pipeline._running
+            )
+            if not is_active:
                 break
             await pipeline.handle_audio_frame(frame_event.frame)
     except Exception:

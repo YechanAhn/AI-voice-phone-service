@@ -35,6 +35,13 @@ class Settings(BaseSettings):
     restaurant_name: str = "맛있는 식당"
     restaurant_id: int = 1
 
+    # Service Mode: "full" (AI reservation) or "ivr" (natural voice menu)
+    service_mode: str = "full"
+
+    # IVR Settings (used when service_mode="ivr")
+    ivr_enable_reservation_transfer: bool = True
+    ivr_staff_transfer_number: str = ""
+
     # Database
     database_url: str = "postgresql+asyncpg://postgres:postgres@localhost:5432/reservations"
 
