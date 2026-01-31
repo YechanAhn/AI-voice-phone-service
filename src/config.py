@@ -31,6 +31,10 @@ class Settings(BaseSettings):
     openai_api_key: str = ""
     llm_model: str = "gpt-4o"
 
+    # Restaurant
+    restaurant_name: str = "맛있는 식당"
+    restaurant_id: int = 1
+
     # Database
     database_url: str = "postgresql+asyncpg://postgres:postgres@localhost:5432/reservations"
 

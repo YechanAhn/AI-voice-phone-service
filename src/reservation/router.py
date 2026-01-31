@@ -1,8 +1,12 @@
 """REST API endpoints for reservation management."""
 
-from fastapi import APIRouter, Depends
+from collections.abc import AsyncGenerator
+
+from fastapi import APIRouter, Depends, Header
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from src.config import settings
+from src.database import get_db_session
 from src.reservation.schemas import (
     AvailabilityRequest,
     AvailabilityResponse,
@@ -17,15 +21,22 @@ from src.reservation.service import ReservationService
 router = APIRouter(prefix="/api/reservations", tags=["reservations"])
 
 
-# TODO: Implement proper dependency injection for db session
-async def get_db() -> AsyncSession:  # type: ignore[misc]
-    """Database session dependency (to be connected with actual engine)."""
-    raise NotImplementedError("Database session not configured yet")
+async def get_db() -> AsyncGenerator[AsyncSession, None]:
+    """Database session dependency."""
+    async for session in get_db_session():
+        yield session
 
 
-async def get_service(db: AsyncSession = Depends(get_db)) -> ReservationService:
-    # TODO: Get restaurant_id from request context
-    return ReservationService(db=db, restaurant_id=1)
+async def get_service(
+    db: AsyncSession = Depends(get_db),
+    x_restaurant_id: int = Header(default=None),
+) -> ReservationService:
+    """Reservation service dependency.
+
+    Restaurant ID comes from X-Restaurant-Id header or config default.
+    """
+    restaurant_id = x_restaurant_id or settings.restaurant_id
+    return ReservationService(db=db, restaurant_id=restaurant_id)
 
 
 @router.post("/check-availability", response_model=AvailabilityResponse)

@@ -35,6 +35,9 @@ dependencies = [
     # HTTP Client
     "httpx>=0.28.0",
 
+    # WebSocket
+    "websockets>=13.0",
+
     # Configuration
     "pydantic-settings>=2.6.0",
 
@@ -50,6 +53,9 @@ dev = [
     "ruff>=0.8.0",
     "mypy>=1.13.0",
 ]
+
+[tool.hatch.build.targets.wheel]
+packages = ["src"]
 
 [tool.ruff]
 target-version = "py311"
